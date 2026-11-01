@@ -235,6 +235,58 @@ struct MTPUploadTests {
         }
         #expect(output.contains("TERM=xterm-256color"))
     }
+
+    /// Regression test: when a transfer starts adb's background server, the server keeps the transfer's
+    /// terminal open. The transfer must still finish as soon as adb itself exits.
+    @Test func finishesEvenIfABackgroundProcessKeepsTheTerminalOpen() async throws {
+        let runner = PTYProcess(executable: "/bin/sh", arguments: ["-c", "echo done; sleep 20 & exit 0"])
+        let start = Date()
+        let output: String = await withCheckedContinuation { cont in
+            runner.onExit = { _, out in cont.resume(returning: out) }
+            try? runner.start()
+        }
+        #expect(output.contains("done"))
+        #expect(Date().timeIntervalSince(start) < 5, "waited for the background process instead of adb")
+    }
+}
+
+@Suite("Security")
+struct SecurityTests {
+    /// Phone file names can't disguise a file's type or sneak control characters onto the Mac.
+    @Test func phoneNamesAreCleanedForTheMac() {
+        #expect(RemotePath.safeLocalName("photo\u{202E}gpj.app") == "photogpj.app")
+        #expect(RemotePath.safeLocalName("a\u{2066}b\u{2069}c\u{200F}.jpg") == "abc.jpg")
+        #expect(RemotePath.safeLocalName("line\nbreak\u{7}.txt") == "linebreak.txt")
+        #expect(RemotePath.safeLocalName("..") == "Untitled")
+        #expect(RemotePath.safeLocalName("\u{202E}") == "Untitled")
+        #expect(RemotePath.safeLocalName("a/b") == "a-b")
+        #expect(RemotePath.safeLocalName("Émoji 📸 IMG_20260705.jpg") == "Émoji 📸 IMG_20260705.jpg")  // normal names untouched
+    }
+
+    /// Only Google's signed adb counts as genuine.
+    @Test func recognisesGooglesADB() {
+        #expect(!ADB.isSignedByGoogle("/bin/ls"))  // signed by Apple, not Google
+        #expect(!ADB.isSignedByGoogle("/nonexistent/adb"))
+        let homebrew = "/opt/homebrew/Caskroom/android-platform-tools"
+        if let path = ADB.path, URL(fileURLWithPath: path).resolvingSymlinksInPath().path.hasPrefix(homebrew) {
+            #expect(ADB.isSignedByGoogle(path))  // Homebrew installs Google's own signed build
+        }
+    }
+}
+
+@Suite("USB errors")
+struct USBErrorTests {
+    /// An unplugged phone must not be treated as a stuck connection to reset.
+    @Test func unpluggedIsNotStuck() {
+        let error = { (code: UInt32) in NSError(domain: NSOSStatusErrorDomain, code: Int(Int32(bitPattern: code))) }
+        for gone: UInt32 in [0xE00002C0, 0xE00002D7, 0xE00002D9, 0xE00002CD] {
+            #expect(MTPConnection.isGone(error(gone)))
+        }
+        for stuck: UInt32 in [0xE00002D6, 0xE00002ED, 0xE00002EB] {  // timeout, not responding, aborted
+            #expect(!MTPConnection.isGone(error(stuck)))
+        }
+        #expect(!MTPError.notFound.isLinkFailure)
+    }
 }
 
 @Suite("Phone detection")
@@ -296,10 +348,10 @@ struct PhoneDetectionTests {
     }
 
     @Test func phonesWithoutSerialNumbersStayTheSameDevice() {
-        let a = MTPDiscovery.Candidate(service: 0, usbSerial: "", vendorID: 0x2717, locationID: 0x0010_0000, productName: "Phone")
-        let b = MTPDiscovery.Candidate(service: 0, usbSerial: "", vendorID: 0x2717, locationID: 0x0010_0000, productName: "Phone")
-        #expect(a.key == b.key && !a.key.isEmpty)
-        let pixel = MTPDiscovery.Candidate(service: 0, usbSerial: "5A080DLCQ002HU", vendorID: 0x18D1, locationID: 1, productName: "Pixel")
+        let a = MTPDiscovery.Candidate(service: 0, usbSerial: "", vendorID: 0x2717, locationID: 0x0010_0000, productName: "Phone", registryID: 1)
+        let b = MTPDiscovery.Candidate(service: 0, usbSerial: "", vendorID: 0x2717, locationID: 0x0010_0000, productName: "Phone", registryID: 2)
+        #expect(a.key == b.key && !a.key.isEmpty)  // the same phone, even though each plug-in gets a new registry ID
+        let pixel = MTPDiscovery.Candidate(service: 0, usbSerial: "5A080DLCQ002HU", vendorID: 0x18D1, locationID: 1, productName: "Pixel", registryID: 3)
         #expect(pixel.key == "5A080DLCQ002HU")  // matches the adb serial, so USB debugging takes over cleanly
     }
 

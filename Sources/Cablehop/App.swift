@@ -66,7 +66,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         LogStore.shared.flush()
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    /// Closing the window keeps Cablehop running, like Finder, so copies in progress carry on and an
+    /// accidental click doesn't quit. Click the Dock icon to bring the window back; quit with ⌘Q.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     @MainActor
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

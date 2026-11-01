@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 enum ADBError: LocalizedError {
     case notFound
@@ -37,8 +38,28 @@ enum ADB {
         if let bundled = Bundle.main.url(forResource: "adb", withExtension: nil)?.path {
             candidates.append(bundled)
         }
-        return candidates.first { fm.isExecutableFile(atPath: $0) }
+        let installed = candidates.filter { fm.isExecutableFile(atPath: $0) }
+        // Prefer Google's own signed adb, so a copy planted earlier in the search order can't be picked
+        // over the real one. An unsigned build (e.g. compiled from source) still works, with a log note.
+        if let genuine = installed.first(where: isSignedByGoogle) { return genuine }
+        if let other = installed.first {
+            Log.warning("Using an adb that isn't signed by Google: \(other)", .adb)
+            return other
+        }
+        return nil
     }()
+
+    /// Google signs its platform tools with its Apple Developer ID (team EQHXZ8M8AV).
+    static func isSignedByGoogle(_ path: String) -> Bool {
+        var code: SecStaticCode?
+        var requirement: SecRequirement?
+        guard SecStaticCodeCreateWithPath(URL(fileURLWithPath: path).resolvingSymlinksInPath() as CFURL, [], &code) == errSecSuccess,
+              let code,
+              SecRequirementCreateWithString(#"anchor apple generic and certificate leaf[subject.OU] = "EQHXZ8M8AV""# as CFString,
+                                             [], &requirement) == errSecSuccess
+        else { return false }
+        return SecStaticCodeCheckValidity(code, [], requirement) == errSecSuccess
+    }
 
     /// Runs adb and collects its output. The process is killed if it outlives `timeout`
     /// (nil = no limit) or if the calling task is cancelled.
@@ -369,7 +390,17 @@ final class PTYProcess: @unchecked Sendable {
         Thread { [weak self] in
             var all = Data()
             var buffer = [UInt8](repeating: 0, count: 8192)
+            var waiting = pollfd(fd: master, events: Int16(POLLIN), revents: 0)
             while true {
+                let ready = poll(&waiting, 1, 500)
+                if ready < 0 && errno == EINTR { continue }
+                if ready < 0 { break }
+                if ready == 0 {
+                    // Nothing new. Once adb has exited, stop waiting: if this transfer started adb's background
+                    // server, that server keeps the terminal open and the read would never end.
+                    if !process.isRunning { break }
+                    continue
+                }
                 let n = read(master, &buffer, buffer.count)
                 if n < 0 && errno == EINTR { continue }
                 if n <= 0 { break }  // EIO once adb exits and the terminal closes

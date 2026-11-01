@@ -112,7 +112,7 @@ final class PhoneFilePromises: NSObject, NSFilePromiseProviderDelegate, @uncheck
     }
 
     func filePromiseProvider(_ provider: NSFilePromiseProvider, fileNameForType fileType: String) -> String {
-        (provider.userInfo as? Payload)?.file.name ?? "File"
+        RemotePath.safeLocalName((provider.userInfo as? Payload)?.file.name ?? "File")
     }
 
     func operationQueue(for provider: NSFilePromiseProvider) -> OperationQueue { queue }

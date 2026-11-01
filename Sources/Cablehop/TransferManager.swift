@@ -192,7 +192,7 @@ final class TransferManager {
         startedTick += 1
         try? FileManager.default.createDirectory(at: localDir, withIntermediateDirectories: true)
         for file in files {
-            let dest = Self.uniqueDestination(in: localDir, name: file.name, reserved: reservedPaths)
+            let dest = Self.uniqueDestination(in: localDir, name: RemotePath.safeLocalName(file.name), reserved: reservedPaths)
             reservedPaths.insert(dest.path)
             let transfer = Transfer(serial: serial, direction: .pull, name: file.name, source: file.path,
                                     destination: dest.path, isDirectory: file.isDirectory,

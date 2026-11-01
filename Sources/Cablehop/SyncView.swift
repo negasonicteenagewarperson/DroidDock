@@ -25,11 +25,15 @@ enum SyncPlanner {
         var upToDate = 0
         let rootPath = localRoot.standardizedFileURL.path + "/"
         for (relative, size) in from.sorted(by: { $0.key < $1.key }) {
-            if to[relative] == size { upToDate += 1; continue }
+            // Phone names are cleaned before they become Mac file names (see RemotePath.safeLocalName).
+            let localRelative = job.direction == .phoneToMac
+                ? relative.split(separator: "/").map { RemotePath.safeLocalName(String($0)) }.joined(separator: "/")
+                : relative
+            if to[job.direction == .phoneToMac ? localRelative : relative] == size { upToDate += 1; continue }
             // Never let a crafted name on the phone write outside the chosen folders.
             guard !relative.isEmpty, RemotePath.isSafe("/" + relative) else { continue }
             let remotePath = RemotePath.join(job.remotePath, relative)
-            let localPath = localRoot.appendingPathComponent(relative).standardizedFileURL.path
+            let localPath = localRoot.appendingPathComponent(localRelative).standardizedFileURL.path
             guard localPath.hasPrefix(rootPath), RemotePath.isWithin(remotePath, job.remotePath) else { continue }
             copies.append(SyncCopy(
                 name: (relative as NSString).lastPathComponent,

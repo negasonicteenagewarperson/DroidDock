@@ -263,7 +263,7 @@ final class MTPFileSystem: @unchecked Sendable {
         if object.isFolder {
             try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
             for child in try children(of: Location(storage: object.storage, handle: object.handle), refresh: true) {
-                try download(child, to: url.appendingPathComponent(child.name), cancel: cancel, advance: advance)
+                try download(child, to: url.appendingPathComponent(RemotePath.safeLocalName(child.name)), cancel: cancel, advance: advance)
             }
             return
         }
@@ -382,11 +382,12 @@ private final class CancelWatcher: @unchecked Sendable {
 enum PhoneFiles {
     /// Copies a phone file into a temporary folder on the Mac (for opening, Quick Look and drag-out).
     static func pullToTemp(serial: String, file: RemoteFile) async throws -> URL {
+        let name = RemotePath.safeLocalName(file.name)
         if let fs = Phones.mtp(serial) {
-            let path = file.path, name = file.name
+            let path = file.path
             return try await onBackground { try fs.pullToTemp(path, name: name) }
         }
-        return try await ADB.pullToTemp(serial: serial, remotePath: file.path, name: file.name)
+        return try await ADB.pullToTemp(serial: serial, remotePath: file.path, name: name)
     }
 }
 

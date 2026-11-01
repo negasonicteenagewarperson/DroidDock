@@ -112,6 +112,24 @@ struct SyncJob: Codable, Identifiable, Hashable {
 }
 
 enum RemotePath {
+    /// A phone file name made safe to create on the Mac: no control characters, and none of the invisible
+    /// characters that flip text direction, which can disguise a file's real type (a file really named
+    /// "photo\u{202E}gpj.app" shows up as "photoppa.jpg"). Empty or "."/".." names become "Untitled".
+    static func safeLocalName(_ name: String) -> String {
+        let kept = name.unicodeScalars.filter { scalar in
+            scalar.properties.generalCategory != .control && !isDirectionControl(scalar)
+        }
+        let cleaned = String(String.UnicodeScalarView(kept)).replacingOccurrences(of: "/", with: "-")
+        return cleaned.isEmpty || cleaned == "." || cleaned == ".." ? "Untitled" : cleaned
+    }
+
+    static func isDirectionControl(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x061C, 0x200E, 0x200F, 0x202A...0x202E, 0x2066...0x2069: return true
+        default: return false
+        }
+    }
+
     /// Absolute, no "." or ".." components, no control characters.
     static func isSafe(_ path: String) -> Bool {
         guard path.hasPrefix("/") else { return false }

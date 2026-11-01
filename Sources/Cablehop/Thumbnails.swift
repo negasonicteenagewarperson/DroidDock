@@ -16,6 +16,7 @@ actor ThumbnailLoader {
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private let maxConcurrent = 3
     private let maxFullDownload: Int64 = 20 * 1024 * 1024
+    private let maxFullDownloadOverUSB: Int64 = 4 * 1024 * 1024
 
     init() {
         diskDir = Caches.thumbnails
@@ -44,7 +45,9 @@ actor ThumbnailLoader {
             if let data = try? await onBackground({ try fs.thumbnail(path) }) {
                 cgImage = Self.makeThumbnail(from: data, embeddedOnly: false)
             }
-            if cgImage == nil, file.isImage, file.size <= maxFullDownload, !Task.isCancelled,
+            // Only small photos are copied whole: file transfer has one USB connection, and big copies made
+            // just for previews would hold up browsing and real transfers.
+            if cgImage == nil, file.isImage, file.size <= maxFullDownloadOverUSB, !Task.isCancelled,
                let data = try? await onBackground({ try fs.readAll(path) }) {
                 cgImage = Self.makeThumbnail(from: data, embeddedOnly: false)
             }

@@ -88,11 +88,16 @@ final class MTPConnection: @unchecked Sendable {
     private let cancelLock = NSLock()
     private var cancelRequested = false
 
+    /// macOS's ID for this exact USB connection. A phone that's replugged (or reconnects by itself) gets a
+    /// new one, even though its serial number is the same.
+    let registryID: UInt64
+
     init(service: io_service_t, usbSerial: String, vendorID: Int) {
         IOObjectRetain(service)
         self.service = service
         self.usbSerial = usbSerial
         self.vendorID = vendorID
+        registryID = MTPDiscovery.registryID(of: service)
     }
 
     deinit {
@@ -420,8 +425,15 @@ final class MTPConnection: @unchecked Sendable {
         do {
             try bulkOut.__sendIORequest(with: data.isEmpty ? nil : buffer, bytesTransferred: nil, completionTimeout: ioTimeout)
         } catch {
+            if MTPConnection.isGone(error) { throw MTPError.notFound }
             throw MTPError.openFailed("USB write failed (\(MTPConnection.code(error))).")
         }
+    }
+
+    /// The phone was unplugged (or the session closed): nothing to recover, so don't try resetting the link.
+    static func isGone(_ error: Error) -> Bool {
+        let code = UInt32(truncatingIfNeeded: (error as NSError).code)
+        return [0xE00002C0, 0xE00002D7, 0xE00002D9, 0xE00002CD].contains(code)  // no device, offline, not attached, not open
     }
 
     private func read(_ length: Int, timeout: TimeInterval? = nil) throws -> Data {
@@ -432,6 +444,7 @@ final class MTPConnection: @unchecked Sendable {
         do {
             try bulkIn.__sendIORequest(with: buffer, bytesTransferred: &transferred, completionTimeout: timeout ?? ioTimeout)
         } catch {
+            if MTPConnection.isGone(error) { throw MTPError.notFound }
             throw MTPError.openFailed("USB read failed (\(MTPConnection.code(error))).")
         }
         return Data(bytes: buffer.bytes, count: Int(transferred))
@@ -785,6 +798,8 @@ enum MTPDiscovery {
         let vendorID: Int
         let locationID: Int
         let productName: String
+        /// Changes whenever the phone reconnects on USB; see `MTPConnection.registryID`.
+        let registryID: UInt64
 
         /// Stable across polls: the serial number, or the USB port for phones without one.
         var key: String { usbSerial.isEmpty ? String(format: "usb-%08x", locationID) : usbSerial }
@@ -831,7 +846,8 @@ enum MTPDiscovery {
             let serial = property(parent, "USB Serial Number") as? String ?? property(parent, "kUSBSerialNumberString") as? String ?? ""
             let product = property(parent, "USB Product Name") as? String ?? property(parent, "kUSBProductString") as? String ?? "Android phone"
             result.append(Candidate(service: service, usbSerial: serial, vendorID: vendor,
-                                    locationID: property(parent, "locationID") as? Int ?? 0, productName: product))
+                                    locationID: property(parent, "locationID") as? Int ?? 0, productName: product,
+                                    registryID: registryID(of: service)))
         }
         return result
     }
@@ -853,6 +869,12 @@ enum MTPDiscovery {
             device.destroy()
             MTPConnection.log("USB reset done")
         }
+    }
+
+    static func registryID(of entry: io_registry_entry_t) -> UInt64 {
+        var id: UInt64 = 0
+        IORegistryEntryGetRegistryEntryID(entry, &id)
+        return id
     }
 
     private static func property(_ entry: io_registry_entry_t, _ key: String) -> Any? {

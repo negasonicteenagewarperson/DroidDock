@@ -375,6 +375,11 @@ Keep a phone folder and a Mac folder up to date, for example backing up your cam
   click **Try Again**.
 - **"The phone isn't responding."** Cablehop resets the USB connection automatically. If it still
   doesn't answer, unplug the phone, plug it back in and unlock it.
+- **The phone keeps disconnecting.** Usually it's the cable or port: use a data cable directly on the Mac
+  rather than a hub or adapter, and avoid moving the cable during big copies. Keep the phone unlocked while
+  copying, and turn off battery savers that limit USB. Cablehop reconnects by itself when the phone comes
+  back. If it keeps happening, use **Help › Save Logs…**: the log shows each disconnect and how long
+  reconnecting took.
 - **Features are greyed out.** They need USB debugging; see
   [Unlocking every feature](#unlocking-every-feature-usb-debugging).
 - **"Allow access on your phone."** With USB debugging on, the phone shows an *Allow USB debugging?*
@@ -394,6 +399,10 @@ Keep a phone folder and a Mac folder up to date, for example backing up your cam
 
 **Why doesn't the phone appear in Finder's sidebar?** That needs a special kind of Mac extension, which
 Cablehop doesn't have yet. For now you browse the phone in Cablehop and drag files to and from Finder.
+
+**Why does Cablehop keep running when I close its window?** So copies in progress carry on, and a
+stray click doesn't quit. Click Cablehop in the Dock to bring the window back, or quit with ⌘Q (it
+asks first if something is still copying).
 
 **Do I need USB debugging?** No. File transfer covers browsing and copying. USB debugging adds the
 extras listed above.

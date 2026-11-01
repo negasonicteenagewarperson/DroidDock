@@ -1,5 +1,30 @@
 # Changelog
 
+## 2.7
+
+Includes everything from 2.6 (Unmount).
+
+### Fixed
+- **Closing the window no longer quits Cablehop.** It keeps running, like Finder, so copies carry on and
+  a stray click can't close the app. Click Cablehop in the Dock to bring the window back; quit with ⌘Q.
+- **Steadier phone connection:**
+  - A phone that reconnects on USB by itself (a loose cable, or switching USB modes) is now opened again
+    properly. Before, Cablehop kept using the dead connection, so everything failed and it kept resetting
+    the phone's USB.
+  - Unplugging is recognised as unplugging, instead of a stuck connection to reset.
+  - With USB debugging, adb sometimes drops the phone from its list, or calls it offline, for a moment.
+    Cablehop now rides that out instead of resetting the browser and switching modes back and forth.
+  - Photo previews in File transfer mode no longer copy whole large photos over USB, which tied up the
+    connection and held up browsing and transfers.
+  - A transfer that started adb's background service could never finish; it now finishes when adb does.
+  - If an adb check ever hangs, Cablehop keeps checking instead of stopping for good.
+
+### Security
+- **Genuine adb first.** If several copies of adb are installed, Cablehop picks the one signed by
+  Google, and notes in the log when it has to use one that isn't.
+- **Phone file names are cleaned** before they become files on the Mac: invisible characters that flip
+  text direction (which can make an app look like a photo) and control characters are removed.
+
 ## 2.6
 
 ### New

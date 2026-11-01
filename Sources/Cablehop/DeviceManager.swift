@@ -18,7 +18,9 @@ final class DeviceManager {
     @ObservationIgnored private var usbRefreshTask: Task<Void, Never>?
     /// The last list from `adb devices`, so file-transfer phones can be shown without waiting for adb.
     @ObservationIgnored private var adbDevices: [Device] = []
-    @ObservationIgnored private var adbCheckRunning = false
+    @ObservationIgnored private var adbCheckStartedAt: Date?
+    /// When adb last reported each phone as working, to ride out its brief hiccups.
+    @ObservationIgnored private var adbWorkingAt: [String: Date] = [:]
     /// When each phone's file-transfer interface first appeared, to log how long connecting took.
     @ObservationIgnored private var mtpSeenAt: [String: Date] = [:]
 
@@ -93,10 +95,12 @@ final class DeviceManager {
         // File-transfer phones are found through IOKit in milliseconds, while adb can take seconds (especially
         // while its server starts). So show what USB has right away, using adb's last answer, then ask adb.
         publish(adbDevices + refreshMTP(adbDevices: adbDevices))
-        guard !adbMissing, !adbCheckRunning else { fetchInfo(); return }
-        adbCheckRunning = true
-        let fresh = await listADBDevices()
-        adbCheckRunning = false
+        // One adb check at a time; if one ever hangs, don't let it stop adb checks for good.
+        if let started = adbCheckStartedAt, Date().timeIntervalSince(started) < 30 { fetchInfo(); return }
+        guard !adbMissing else { fetchInfo(); return }
+        adbCheckStartedAt = Date()
+        let fresh = stabilised(await listADBDevices())
+        adbCheckStartedAt = nil
         if fresh != adbDevices {
             adbDevices = fresh
             publish(adbDevices + refreshMTP(adbDevices: adbDevices))
@@ -121,6 +125,30 @@ final class DeviceManager {
             if let sdk = info[list[index].serial]?.sdk, sdk > 0, sdk < 23 { list[index].state = .unsupported }
         }
         return list
+    }
+
+    /// adb sometimes drops a USB phone from its list, or calls it "offline", for a moment. Keep a phone that
+    /// was working a few seconds ago as it was, so the browser doesn't reset and File transfer mode doesn't
+    /// grab the phone in between. A phone that's really unplugged disappears a few seconds later.
+    private func stabilised(_ fresh: [Device]) -> [Device] {
+        let now = Date()
+        let grace: TimeInterval = 4
+        for device in fresh where device.state == .device { adbWorkingAt[device.serial] = now }
+        func recentlyWorking(_ serial: String) -> Bool {
+            adbWorkingAt[serial].map { now.timeIntervalSince($0) < grace } ?? false
+        }
+        var result = fresh.map { device -> Device in
+            guard device.state == .offline, recentlyWorking(device.serial),
+                  let previous = adbDevices.first(where: { $0.serial == device.serial && $0.state == .device })
+            else { return device }
+            return previous
+        }
+        for previous in adbDevices where previous.isWired && previous.state == .device
+            && !fresh.contains(where: { $0.serial == previous.serial }) && recentlyWorking(previous.serial) {
+            result.append(previous)
+        }
+        adbWorkingAt = adbWorkingAt.filter { now.timeIntervalSince($0.value) < 60 }
+        return result
     }
 
     private func publish(_ raw: [Device]) {
@@ -186,6 +214,12 @@ final class DeviceManager {
                                      listedModel: candidate.productName, transport: .mtp))
                 continue
             }
+            if let fs = Phones.mtp(serial), fs.conn.registryID != candidate.registryID {
+                // The phone reconnected on USB (a loose cable, or it switched modes) before we noticed it
+                // leave: the old connection is dead, so drop it and open the new one.
+                Log.info("\(fs.displayName) reconnected on USB; opening it again", .device)
+                Phones.close(serial)
+            }
             if let fs = Phones.mtp(serial), fs.isBroken {
                 // The session got stuck mid-way and couldn't be recovered: reset the USB link and reopen.
                 Phones.close(serial)
@@ -238,6 +272,7 @@ final class DeviceManager {
             case .success(let fs):
                 Phones.register(serial, fs)
                 mtpErrors[serial] = nil
+                browsers[serial]?.refresh()  // after a reconnect, the folder on screen came from the old connection
                 Log.info("File-transfer session opened in \(opening) (\(sincePlugIn) after the phone appeared on USB): \(fs.conn.manufacturer) \(fs.displayName), \(fs.storages.count) storage area(s)\(fs.isLocked ? ", phone locked" : "")", .device)
             case .failure(MTPError.unresponsive) where (mtpLastReset[serial] ?? .distantPast) < Date().addingTimeInterval(-60):
                 // Usually a session left stuck by an interrupted copy: reset the USB link once and try again.
