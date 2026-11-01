@@ -143,7 +143,7 @@
   tr:last-child td { border-bottom: none; } th { color: var(--muted); font-weight: 600; width: 34%; }
   footer { padding: 56px 0 48px; color: var(--muted); font-size: 15px; text-align: center; }
   footer a { color: var(--muted); }
-  code { background: var(--card); border: 1px solid var(--line); padding: 2px 7px; border-radius: 6px; font-size: .92em; }
+  code { background: var(--card); border: 1px solid var(--line); padding: 2px 7px; border-radius: 6px; font-size: .92em; overflow-wrap: anywhere; }
   @media (max-width: 560px) { nav a:not(.keep) { display: none; } .btn.ghost { margin: 12px 0 0; } }
 </style>
 </head>
@@ -205,6 +205,10 @@
     <section id="install">
       <h2>Install in a minute</h2>
       <p class="sub">Works on any Apple silicon (M1 and later) or Intel Mac with macOS 14 or later, and any Android phone.</p>
+      <p class="sub" style="margin-bottom:8px">With <a href="https://brew.sh">Homebrew</a>:</p>
+      <p><code>brew trust --cask negasonicteenagewarperson/tap/cablehop</code><br>
+         <code>brew install --cask negasonicteenagewarperson/tap/cablehop</code></p>
+      <p class="sub" style="margin:18px 0 8px">Or from the disk image:</p>
       <ol class="steps">
         <li><a href="https://github.com/negasonicteenagewarperson/Cablehop/releases/latest">Download <b>Cablehop.dmg</b></a>, open it and drag <b>Cablehop</b> onto <b>Applications</b>.</li>
         <li>Open Cablehop. The first time, macOS says it can't verify the app because it isn't notarized by Apple: click <b>Done</b>, then go to <b>System Settings › Privacy &amp; Security</b> and click <b>Open Anyway</b>. You only do this once.</li>

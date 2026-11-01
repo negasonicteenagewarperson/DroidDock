@@ -100,6 +100,19 @@ You can start with file transfer and switch on the extras later. Cablehop notice
 
 ## Install
 
+### With Homebrew
+
+```bash
+brew trust --cask negasonicteenagewarperson/tap/cablehop
+brew install --cask negasonicteenagewarperson/tap/cablehop
+```
+
+The first line is Homebrew's one-time confirmation that you trust this cask (Homebrew asks for it with
+any tap outside its own catalogue). Update later with `brew upgrade --cask cablehop`, or from inside the
+app. The first time you open it, see [Gatekeeper](#opening-it-the-first-time-gatekeeper) below.
+
+### From the disk image
+
 1. **Download** `Cablehop-<version>.dmg` from the [latest release](https://github.com/negasonicteenagewarperson/Cablehop/releases/latest).
 2. **Open** the downloaded file. A window appears with Cablehop and your Applications folder.
 3. **Drag Cablehop onto Applications.**
@@ -422,6 +435,11 @@ cd Cablehop
 ./Scripts/make-dmg.sh    # package it as dist/Cablehop-<version>.dmg
 ./Scripts/release.sh     # all of the above, plus a .zip and a signed SHA256SUMS.txt
 ```
+
+**Homebrew.** After a release is published on GitHub, `./Scripts/update-homebrew-tap.sh` points the cask in
+[negasonicteenagewarperson/homebrew-tap](https://github.com/negasonicteenagewarperson/homebrew-tap) at it:
+it checks the published DMG matches the local build, updates the version and checksum, and pushes. It
+expects the tap checked out at `~/Documents/homebrew-tap` (or set `HOMEBREW_TAP_DIR`).
 
 **Release signing.** The in-app updater only installs releases whose `SHA256SUMS.txt` is signed with the
 project's Ed25519 release key. `release.sh` signs it automatically using `~/.cablehop-release-key`; create
