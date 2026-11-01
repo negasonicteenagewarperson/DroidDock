@@ -236,6 +236,12 @@ struct MTPUploadTests {
 
 @Suite("Phone detection")
 struct PhoneDetectionTests {
+    /// Phones appear the moment they're plugged in only if macOS accepts both USB notifications.
+    @Test func watchesUSBPlugAndUnplug() {
+        let watcher = USBWatcher {}
+        #expect(watcher.isArmed)
+    }
+
     @Test func acceptsPhonesFromEveryMaker() {
         // Pixel / AOSP: class 6 named "MTP"
         #expect(MTPDiscovery.isPhoneTransferInterface(interfaceClass: 0x06, subclass: 1, name: "MTP", vendor: 0x18D1))

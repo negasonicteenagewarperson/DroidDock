@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.5
+
+### Fixed
+- **Phones show up much faster.** Cablehop now hears about a phone the moment it's plugged in, or the
+  moment you choose File transfer on it, instead of waiting for its next check (up to 6 seconds when
+  Cablehop was in the background).
+- **File transfer phones no longer wait for adb.** Each check used to ask Google's adb tool first and
+  only then look at USB; when adb was starting up or slow, that held everything up by seconds, including
+  right after launch. USB phones now appear straight away while adb is asked alongside.
+
+### Changed
+- **The log records how long each connection took**, from the phone appearing on USB to its files being
+  ready, so a slow phone is easy to diagnose from a saved log.
+
 ## 2.4
 
 ### Fixed

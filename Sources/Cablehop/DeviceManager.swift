@@ -14,6 +14,13 @@ final class DeviceManager {
     @ObservationIgnored private var browsers: [String: FileBrowserModel] = [:]
     @ObservationIgnored private var infoFetchedAt: [String: Date] = [:]
     @ObservationIgnored private var pollTask: Task<Void, Never>?
+    @ObservationIgnored private var usbWatcher: USBWatcher?
+    @ObservationIgnored private var usbRefreshTask: Task<Void, Never>?
+    /// The last list from `adb devices`, so file-transfer phones can be shown without waiting for adb.
+    @ObservationIgnored private var adbDevices: [Device] = []
+    @ObservationIgnored private var adbCheckRunning = false
+    /// When each phone's file-transfer interface first appeared, to log how long connecting took.
+    @ObservationIgnored private var mtpSeenAt: [String: Date] = [:]
 
     var selectedDevice: Device? { devices.first { $0.serial == selectedSerial } }
 
@@ -35,14 +42,28 @@ final class DeviceManager {
     @ObservationIgnored private var mtpLastReset: [String: Date] = [:]
 
     init() {
-        // File transfer (MTP) works without adb, so always poll; adb is just skipped when missing.
+        // Plugging a phone in (or switching it to File transfer) is noticed straight away; the poll below
+        // is a backup, and also picks up Wi-Fi phones and a phone being unlocked.
+        usbWatcher = USBWatcher { [weak self] in MainActor.assumeIsolated { self?.usbChanged() } }
+        if usbWatcher?.isArmed != true { Log.warning("USB change notifications unavailable; relying on polling", .device) }
+        // File transfer (MTP) works without adb, so always poll; adb is just skipped when missing. adb starts
+        // its own server on first use, so nothing waits for it here.
         pollTask = Task { [weak self] in
-            if ADB.path != nil { _ = try? await ADB.run(["start-server"]) }
             while !Task.isCancelled {
                 await self?.refresh()
                 // Check often while you're using the app, rarely when it's in the background.
                 try? await Task.sleep(for: .seconds(NSApp?.isActive == false ? 6 : 1.5))
             }
+        }
+    }
+
+    /// A USB device came or went. Wait a moment so all of a phone's USB interfaces have appeared, then look.
+    private func usbChanged() {
+        usbRefreshTask?.cancel()
+        usbRefreshTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            await self?.refresh()
         }
     }
 
@@ -60,8 +81,23 @@ final class DeviceManager {
     }
 
     func refresh() async {
+        // File-transfer phones are found through IOKit in milliseconds, while adb can take seconds (especially
+        // while its server starts). So show what USB has right away, using adb's last answer, then ask adb.
+        publish(adbDevices + refreshMTP(adbDevices: adbDevices))
+        guard !adbMissing, !adbCheckRunning else { fetchInfo(); return }
+        adbCheckRunning = true
+        let fresh = await listADBDevices()
+        adbCheckRunning = false
+        if fresh != adbDevices {
+            adbDevices = fresh
+            publish(adbDevices + refreshMTP(adbDevices: adbDevices))
+        }
+        fetchInfo()
+    }
+
+    private func listADBDevices() async -> [Device] {
         var list: [Device] = []
-        if !adbMissing, let r = try? await ADB.run(["devices", "-l"], timeout: 10) {
+        if let r = try? await ADB.run(["devices", "-l"], timeout: 10) {
             for line in r.out.split(separator: "\n") {
                 if line.hasPrefix("List of") || line.hasPrefix("*") { continue }
                 let cols = line.split(whereSeparator: \.isWhitespace)
@@ -75,17 +111,21 @@ final class DeviceManager {
         for index in list.indices where list[index].state == .device {
             if let sdk = info[list[index].serial]?.sdk, sdk > 0, sdk < 23 { list[index].state = .unsupported }
         }
-        list += refreshMTP(adbDevices: list)
+        return list
+    }
+
+    private func publish(_ list: [Device]) {
         if list != devices {
             logChanges(from: devices, to: list)
             devices = list
         }
-
         if selectedSerial == nil || !list.contains(where: { $0.serial == selectedSerial }) {
             selectedSerial = list.first(where: { $0.state == .device })?.serial ?? list.first?.serial
         }
+    }
 
-        for device in list where device.state == .device || device.state == .unsupported {
+    private func fetchInfo() {
+        for device in devices where device.state == .device || device.state == .unsupported {
             if let fetched = infoFetchedAt[device.serial], Date().timeIntervalSince(fetched) < 30 { continue }
             infoFetchedAt[device.serial] = Date()
             Task {
@@ -111,6 +151,7 @@ final class DeviceManager {
         for candidate in candidates {
             let serial = "mtp:" + candidate.key
             present.insert(serial)
+            if mtpSeenAt[serial] == nil { mtpSeenAt[serial] = Date() }
             if !candidate.usbSerial.isEmpty,
                adbDevices.contains(where: { $0.serial == candidate.usbSerial && $0.state == .device }) {
                 Phones.close(serial)
@@ -138,6 +179,7 @@ final class DeviceManager {
 
         for serial in Phones.serials where !present.contains(serial) { Phones.close(serial) }
         for serial in Array(mtpErrors.keys) where !present.contains(serial) { mtpErrors[serial] = nil }
+        for serial in Array(mtpSeenAt.keys) where !present.contains(serial) { mtpSeenAt[serial] = nil }
         return result
     }
 
@@ -145,6 +187,7 @@ final class DeviceManager {
         mtpOpening.insert(serial)
         IOObjectRetain(candidate.service)
         let service = candidate.service, usbSerial = candidate.usbSerial, vendor = candidate.vendorID, key = candidate.key
+        let started = Date()
         Task {
             let result: Result<MTPFileSystem, Error>
             do {
@@ -160,16 +203,19 @@ final class DeviceManager {
                 result = .failure(error)
             }
             mtpOpening.remove(serial)
+            let opening = String(format: "%.1fs", Date().timeIntervalSince(started))
+            let sincePlugIn = mtpSeenAt[serial].map { String(format: "%.1fs", Date().timeIntervalSince($0)) } ?? "?"
             switch result {
             case .success(let fs):
                 Phones.register(serial, fs)
                 mtpErrors[serial] = nil
-                Log.info("File-transfer session opened: \(fs.conn.manufacturer) \(fs.displayName), \(fs.storages.count) storage area(s)\(fs.isLocked ? ", phone locked" : "")", .device)
+                Log.info("File-transfer session opened in \(opening) (\(sincePlugIn) after the phone appeared on USB): \(fs.conn.manufacturer) \(fs.displayName), \(fs.storages.count) storage area(s)\(fs.isLocked ? ", phone locked" : "")", .device)
             case .failure(MTPError.unresponsive) where (mtpLastReset[serial] ?? .distantPast) < Date().addingTimeInterval(-60):
                 // Usually a session left stuck by an interrupted copy: reset the USB link once and try again.
+                Log.warning("The phone didn't answer for \(opening)", .device)
                 resetUSB(key, serial: serial)
             case .failure(let error):
-                Log.error("Couldn't open the phone for file transfer: \(error.localizedDescription)", .device)
+                Log.error("Couldn't open the phone for file transfer after \(opening): \(error.localizedDescription)", .device)
                 mtpErrors[serial] = error.localizedDescription
                 mtpRetryAt[serial] = Date().addingTimeInterval(5)
             }
