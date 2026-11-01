@@ -22,6 +22,15 @@ final class DeviceManager {
     /// When each phone's file-transfer interface first appeared, to log how long connecting took.
     @ObservationIgnored private var mtpSeenAt: [String: Date] = [:]
 
+    /// Phones being unmounted, and phones unmounted by the person. An unmounted phone is left alone until
+    /// it's unplugged (or Mount Again), so pulling the cable can't cut anything off.
+    @ObservationIgnored private var unmounting: Set<String> = []
+    @ObservationIgnored private var unmounted: Set<String> = []
+    /// A phone whose unmount waits for the person to confirm stopping its transfers.
+    var pendingUnmount: Device?
+    /// Phones whose "unmount before unplugging" reminder was closed; it comes back the next time they're plugged in.
+    private(set) var reminderDismissed: Set<String> = []
+
     var selectedDevice: Device? { devices.first { $0.serial == selectedSerial } }
 
     var recentAddresses: [String] {
@@ -114,7 +123,21 @@ final class DeviceManager {
         return list
     }
 
-    private func publish(_ list: [Device]) {
+    private func publish(_ raw: [Device]) {
+        // A phone that's gone was unplugged: forget that it was unmounted, and remind again next time.
+        let present = Set(raw.map(\.serial))
+        unmounted.formIntersection(present)
+        let keptDismissals = reminderDismissed.intersection(present)
+        if keptDismissals != reminderDismissed { reminderDismissed = keptDismissals }
+        let list = raw.map { device -> Device in
+            var device = device
+            if unmounting.contains(device.serial) {
+                device.state = .unmounting
+            } else if unmounted.contains(device.serial) {
+                device.state = .unmounted
+            }
+            return device
+        }
         if list != devices {
             logChanges(from: devices, to: list)
             devices = list
@@ -155,6 +178,12 @@ final class DeviceManager {
             if !candidate.usbSerial.isEmpty,
                adbDevices.contains(where: { $0.serial == candidate.usbSerial && $0.state == .device }) {
                 Phones.close(serial)
+                continue
+            }
+            if unmounting.contains(serial) || unmounted.contains(serial) {
+                // Unmounted by the person: don't reopen it while it's still plugged in.
+                result.append(Device(serial: serial, state: unmounting.contains(serial) ? .unmounting : .unmounted,
+                                     listedModel: candidate.productName, transport: .mtp))
                 continue
             }
             if let fs = Phones.mtp(serial), fs.isBroken {
@@ -260,6 +289,50 @@ final class DeviceManager {
             }
         }
         for d in old where !newSerials.contains(d.serial) { Log.info("Phone disconnected: \(describe(d))", .device) }
+    }
+
+    // MARK: Unmount
+
+    /// Unmount, like ejecting a disk. Asks first if the phone still has transfers running.
+    func requestUnmount(_ device: Device) {
+        guard device.canUnmount else { return }
+        if let transfers = TransferManager.current, transfers.activeCount(for: device.serial) > 0 {
+            pendingUnmount = device
+        } else {
+            Task { await unmount(device) }
+        }
+    }
+
+    /// Stops this phone's transfers, ends the connection properly, then leaves the phone alone until it's
+    /// unplugged, so the cable can be pulled safely.
+    func unmount(_ device: Device) async {
+        let serial = device.serial
+        guard device.canUnmount, !unmounting.contains(serial) else { return }
+        pendingUnmount = nil
+        let name = displayName(for: device)
+        Log.info("Unmounting \(name) [\(device.isMTP ? "file transfer" : "USB debugging"), …\(serial.suffix(4))]", .device)
+        unmounting.insert(serial)
+        publish(devices)
+        TransferManager.current?.cancelAll(for: serial)
+        browsers[serial] = nil  // mounting again starts fresh
+        await Phones.closeAndWait(serial)  // file transfer: tell the phone the session is over (adb has none)
+        unmounting.remove(serial)
+        unmounted.insert(serial)
+        publish(devices)
+        Log.info("Unmounted \(name): safe to unplug", .device)
+    }
+
+    func mountAgain(_ serial: String) {
+        unmounted.remove(serial)
+        mtpErrors[serial] = nil
+        mtpRetryAt[serial] = nil
+        infoFetchedAt[serial] = nil
+        Log.info("Mounting again …\(serial.suffix(4))", .device)
+        Task { await refresh() }
+    }
+
+    func dismissUnplugReminder(_ serial: String) {
+        reminderDismissed.insert(serial)
     }
 
     func retryMTP(_ serial: String) {

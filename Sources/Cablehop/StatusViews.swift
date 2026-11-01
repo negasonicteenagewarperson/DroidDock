@@ -73,6 +73,21 @@ struct DeviceStateView: View {
                 ProgressView()
                 Text("Connecting to your phone…").foregroundStyle(.secondary)
             }
+        case .unmounting:
+            VStack(spacing: 12) {
+                ProgressView()
+                Text("Unmounting \(dm.displayName(for: device))…").foregroundStyle(.secondary)
+                Text("Don't unplug the cable yet.").font(.callout).foregroundStyle(.tertiary)
+            }
+        case .unmounted:
+            ContentUnavailableView {
+                Label("Safe to unplug", systemImage: "eject.circle")
+            } description: {
+                Text("\(dm.displayName(for: device)) is unmounted. You can remove the cable now.")
+            } actions: {
+                Button("Mount Again") { dm.mountAgain(device.serial) }
+                    .help("Use the phone again without unplugging it")
+            }
         case .locked:
             ContentUnavailableView("Unlock your phone", systemImage: "lock.iphone",
                                    description: Text("Android only shares files once the phone is unlocked. Cablehop will open it automatically."))

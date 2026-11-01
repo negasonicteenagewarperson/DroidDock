@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.6
+
+### New
+- **Unmount.** Safely disconnect a phone before pulling the cable, like ejecting a disk: the eject
+  button (⏏) next to the phone in the sidebar, the Unmount button in the toolbar, **File › Unmount**
+  (⌘E), or right-click the phone. Cablehop stops anything still copying (it asks first if something is),
+  closes the connection properly and shows **Safe to unplug**. The phone stays unmounted until it's
+  unplugged, or until you click **Mount Again**.
+- **Unplug reminder.** Each time a phone is connected by cable, a bar reminds you to unmount it before
+  unplugging, with an Unmount button. Close it with ×; it comes back the next time the phone is plugged in.
+
+### Fixed
+- Two adb tests could fail if adb's background service was still starting when they ran.
+
 ## 2.5
 
 ### Fixed

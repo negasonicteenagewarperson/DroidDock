@@ -15,6 +15,18 @@ enum Phones {
         guard let fs = lock.withLock({ sessions.removeValue(forKey: serial) }) else { return }
         DispatchQueue.global().async { fs.isBroken ? fs.conn.abandon() : fs.conn.close() }
     }
+
+    /// Ends the session properly and returns only once the phone has been told, so it's safe to unplug.
+    /// Anything still talking to the phone finishes first.
+    static func closeAndWait(_ serial: String) async {
+        guard let fs = lock.withLock({ sessions.removeValue(forKey: serial) }) else { return }
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                fs.isBroken ? fs.conn.abandon() : fs.conn.close()
+                done.resume()
+            }
+        }
+    }
 }
 
 /// Runs blocking USB work off the main thread.

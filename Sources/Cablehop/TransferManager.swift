@@ -251,6 +251,16 @@ final class TransferManager {
         for transfer in items where transfer.state.isActive { cancel(transfer) }
     }
 
+    func activeCount(for serial: String) -> Int {
+        items.filter { $0.serial == serial && $0.state.isActive }.count
+    }
+
+    /// Unmounting a phone: stop everything copying to or from it. Each copy removes its own half-finished
+    /// file as it stops.
+    func cancelAll(for serial: String) {
+        for transfer in items where transfer.serial == serial && transfer.state.isActive { cancel(transfer) }
+    }
+
     /// Quitting: the copies won't get to tidy up after themselves, so remove half-finished downloads here.
     func cancelAllBeforeQuit() {
         let downloads = items.filter { $0.state == .running && $0.direction == .pull && !$0.isExternal }

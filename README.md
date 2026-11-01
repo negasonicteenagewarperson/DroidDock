@@ -154,8 +154,14 @@ Only do this for apps you trust.
    (*"Charging this device via USB"*).
 3. Choose **File transfer** (some phones say *Transfer files* or *MTP*).
 
-The phone appears in Cablehop's sidebar within a couple of seconds. If it's locked, Cablehop shows
+The phone appears in Cablehop's sidebar as soon as it's plugged in. If it's locked, Cablehop shows
 *Unlock your phone* and opens it as soon as you do.
+
+**Before you unplug the cable, unmount the phone**, like ejecting a disk: click the eject button (⏏)
+next to it in the sidebar or in the toolbar, choose **File › Unmount** or press **⌘E**. Cablehop stops
+anything still copying (it asks first), closes the connection properly and shows *Safe to unplug*. A
+reminder appears each time a phone is connected by cable. The phone stays unmounted until you unplug it
+or click **Mount Again**.
 
 > Only one app can use a phone's file-transfer connection at a time. If Cablehop says another app is
 > using it, quit Android File Transfer, OpenMTP, MacDroid or Image Capture.
@@ -308,6 +314,7 @@ Keep a phone folder and a Mac folder up to date, for example backing up your cam
 | New folder, rename, delete, Quick Look, open | ✓ | ✓ |
 | Thumbnails | Photos and videos | Photos |
 | Storage and battery | ✓ | ✓ |
+| Unmount before unplugging | ✓ | ✓ |
 | Search the whole phone | | ✓ |
 | Sync folders | | ✓ |
 | Copy/cut/paste on the phone | | ✓ |
@@ -332,6 +339,7 @@ Keep a phone folder and a Mac folder up to date, for example backing up your cam
 | Transfers | ⌥⌘T |
 | Phone screenshot | ⇧⌘S |
 | Connect wirelessly | ⌘K |
+| Unmount the phone (before unplugging) | ⌘E |
 | View logs | ⌥⌘L |
 | Settings | ⌘, |
 

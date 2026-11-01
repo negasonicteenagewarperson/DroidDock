@@ -181,6 +181,8 @@ struct OverwriteTests {
 struct ProcessTests {
     @Test func timeoutKillsStuckCommand() async throws {
         guard ADB.path != nil else { return }
+        // Start adb's server first: while it's starting, `wait-for-device` can return early instead of waiting.
+        _ = try? await ADB.run(["start-server"], timeout: 20)
         let start = Date()
         await #expect(throws: (any Error).self) { _ = try await ADB.run(["wait-for-device"], timeout: 1.5) }
         #expect(Date().timeIntervalSince(start) < 4)
@@ -188,6 +190,7 @@ struct ProcessTests {
 
     @Test func cancellationStopsCommand() async throws {
         guard ADB.path != nil else { return }
+        _ = try? await ADB.run(["start-server"], timeout: 20)
         let task = Task { try await ADB.run(["wait-for-device"], timeout: nil) }
         try await Task.sleep(for: .milliseconds(500))
         let cancelled = Date()
@@ -240,6 +243,30 @@ struct PhoneDetectionTests {
     @Test func watchesUSBPlugAndUnplug() {
         let watcher = USBWatcher {}
         #expect(watcher.isArmed)
+    }
+
+    /// Cabled phones can be unmounted (once); Wi-Fi phones are disconnected instead.
+    @Test func whichPhonesCanBeUnmounted() {
+        let usb = Device(serial: "mtp:ABC123", state: .device, listedModel: "Pixel", transport: .mtp)
+        let debugging = Device(serial: "ABC123", state: .device, listedModel: "Pixel")
+        let wifi = Device(serial: "192.168.1.5:5555", state: .device, listedModel: "Pixel")
+        let tls = Device(serial: "adb-ABC123-xyz._adb-tls-connect._tcp", state: .device, listedModel: "Pixel")
+        #expect(usb.canUnmount && debugging.canUnmount)
+        #expect(!wifi.canUnmount && !tls.canUnmount)
+        for state in [DeviceState.locked, .connecting, .unavailable, .unauthorized] {
+            var phone = usb; phone.state = state
+            #expect(phone.canUnmount, "a phone that's \(state) can still be unmounted")
+        }
+        for state in [DeviceState.unmounting, .unmounted] {
+            var phone = usb; phone.state = state
+            #expect(!phone.canUnmount, "a phone that's \(state) can't be unmounted again")
+        }
+    }
+
+    /// Unmounting a phone with no open session must finish straight away rather than hang.
+    @Test func closingAPhoneWithNoSessionReturns() async {
+        await Phones.closeAndWait("mtp:not-connected")
+        #expect(Phones.mtp("mtp:not-connected") == nil)
     }
 
     @Test func acceptsPhonesFromEveryMaker() {

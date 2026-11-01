@@ -8,6 +8,8 @@ enum DeviceState: String {
     case connecting, locked, unavailable
     /// USB debugging on an Android version too old for Cablehop's browsing commands (before 6.0).
     case unsupported
+    /// Unmount: closing the connection so the cable can be pulled safely; then unmounted until unplugged.
+    case unmounting, unmounted
 
     init(raw: String) {
         switch raw {
@@ -40,6 +42,10 @@ struct Device: Identifiable, Hashable {
     var isWireless: Bool { !isMTP && (serial.contains(":") || serial.contains("._adb-tls-connect.")) }
     /// Search, sync, on-phone copy/paste, screenshots, app installs and Wi-Fi need USB debugging.
     var hasFullAccess: Bool { transport == .adb }
+    /// Plugged in with a cable (Wi-Fi phones are disconnected instead of unmounted).
+    var isWired: Bool { !isWireless }
+    /// A wired phone Cablehop is using or trying to use, which can be unmounted before unplugging.
+    var canUnmount: Bool { isWired && ![.unmounting, .unmounted].contains(state) }
 }
 
 struct DeviceInfo: Equatable {

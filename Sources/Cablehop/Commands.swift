@@ -39,6 +39,7 @@ extension FocusedValues {
 
 struct CablehopCommands: Commands {
     @FocusedValue(\.browser) private var browser
+    let devices: DeviceManager
     let showPairing: () -> Void
     let toggleTransfers: () -> Void
     let reportProblem: () -> Void
@@ -66,6 +67,12 @@ struct CablehopCommands: Commands {
                 .disabled(browser == nil)
             Button("Connect Wirelessly…") { showPairing() }
                 .keyboardShortcut("k", modifiers: .command)
+            // Like Finder's File › Eject: safely disconnect before pulling the cable.
+            Button(devices.selectedDevice.map { "Unmount “\(devices.displayName(for: $0))”" } ?? "Unmount Phone") {
+                if let device = devices.selectedDevice { devices.requestUnmount(device) }
+            }
+            .keyboardShortcut("e", modifiers: .command)
+            .disabled(devices.selectedDevice?.canUnmount != true)
             Divider()
             Button("Send Files to Phone…") { browser?.upload() }
                 .keyboardShortcut("u", modifiers: .command)

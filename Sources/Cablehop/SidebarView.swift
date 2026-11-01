@@ -41,7 +41,8 @@ struct SidebarView: View {
         List(selection: selection) {
             Section("Devices") {
                 ForEach(dm.devices) { device in
-                    DeviceRow(device: device, name: dm.displayName(for: device), info: dm.info[device.serial])
+                    DeviceRow(device: device, name: dm.displayName(for: device), info: dm.info[device.serial],
+                              unmount: device.canUnmount ? { dm.requestUnmount(device) } : nil)
                         .tag(Item.device(device.serial))
                         .contextMenu { deviceMenu(device) }
                         .dropDestination(for: URL.self) { urls, _ in
@@ -101,6 +102,13 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func deviceMenu(_ device: Device) -> some View {
+        if device.canUnmount {
+            Button("Unmount") { dm.requestUnmount(device) }
+            Divider()
+        } else if device.state == .unmounted {
+            Button("Mount Again") { dm.mountAgain(device.serial) }
+            Divider()
+        }
         if device.isMTP {
             if device.state == .unavailable {
                 Button("Try Again") { dm.retryMTP(device.serial) }
@@ -127,6 +135,8 @@ struct DeviceRow: View {
     let device: Device
     let name: String
     let info: DeviceInfo?
+    /// Shown as an eject button, like a disk in Finder's sidebar.
+    var unmount: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 10) {
@@ -143,6 +153,18 @@ struct DeviceRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(name).lineLimit(1)
                 Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            if let unmount {
+                Button(action: unmount) {
+                    Image(systemName: "eject.fill")
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .help("Unmount: safely disconnect the phone before you unplug the cable (⌘E)")
+                .accessibilityLabel("Unmount \(name)")
+            } else if device.state == .unmounting {
+                ProgressView().controlSize(.small)
             }
         }
         .padding(.vertical, 2)
@@ -162,6 +184,8 @@ struct DeviceRow: View {
         case .locked: return "Unlock your phone"
         case .unavailable: return "In use by another app"
         case .unsupported: return "Use File transfer mode"
+        case .unmounting: return "Unmounting…"
+        case .unmounted: return "Unmounted · safe to unplug"
         default: return device.state.rawValue.capitalized
         }
     }

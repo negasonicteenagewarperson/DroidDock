@@ -26,7 +26,8 @@ struct CablehopApp: App {
         .windowToolbarStyle(.unified)
         .defaultSize(width: 1180, height: 720)
         .commands {
-            CablehopCommands(showPairing: { ui.showPairing = true },
+            CablehopCommands(devices: devices,
+                             showPairing: { ui.showPairing = true },
                              toggleTransfers: { TransfersPopover.shared.toggle() },
                              reportProblem: { ui.showReportProblem = true })
         }
@@ -134,5 +135,19 @@ struct ContentView: View {
         .sheet(isPresented: Bindable(Updater.shared).isPresented) {
             UpdateView()
         }
+        .confirmationDialog(unmountTitle,
+                            isPresented: .init(get: { dm.pendingUnmount != nil }, set: { if !$0 { dm.pendingUnmount = nil } }),
+                            presenting: dm.pendingUnmount) { device in
+            Button("Stop Transfers and Unmount", role: .destructive) { Task { await dm.unmount(device) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Unmounting stops them. Half-copied files on your Mac are removed, and files being sent to the phone may be left incomplete there.")
+        }
+    }
+
+    private var unmountTitle: String {
+        guard let device = dm.pendingUnmount else { return "" }
+        let count = transfers.activeCount(for: device.serial)
+        return "\(count) transfer\(count == 1 ? " is" : "s are") still running on \(dm.displayName(for: device))"
     }
 }

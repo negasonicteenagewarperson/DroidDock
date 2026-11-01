@@ -70,6 +70,12 @@ struct FileBrowserView: View {
                 PathBar(path: model.path) { model.navigate(to: $0) }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
+                if device.isWired && !dm.reminderDismissed.contains(device.serial) {
+                    UnplugReminder(unmount: { dm.requestUnmount(device) },
+                                   close: { dm.dismissUnplugReminder(device.serial) })
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, 8)
+                }
                 if !full && !hideMTPBanner {
                     FileTransferModeBanner(hidden: $hideMTPBanner)
                         .padding(.horizontal, 10)
@@ -314,6 +320,15 @@ struct FileBrowserView: View {
                 Label("More", systemImage: "ellipsis.circle")
             }
             .help("More: hidden files, refresh, screenshots and app installs")
+        }
+        if device.isWired {
+            if #available(macOS 26.0, *) {
+                ToolbarSpacer(.fixed, placement: .primaryAction)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button { dm.requestUnmount(device) } label: { Label("Unmount", systemImage: "eject") }
+                    .help("Unmount: safely disconnect the phone before you unplug the cable (⌘E)")
+            }
         }
     }
 
@@ -666,6 +681,32 @@ struct FileTransferModeBanner: View {
             Button { hidden = true } label: { Image(systemName: "xmark") }
                 .buttonStyle(.borderless)
                 .help("Hide this message")
+        }
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .contentCard(cornerRadius: 14)
+    }
+}
+
+/// Shown each time a phone is connected by cable: unmount before unplugging, like ejecting a disk.
+struct UnplugReminder: View {
+    let unmount: () -> Void
+    let close: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "eject.circle.fill").font(.title3).foregroundStyle(Color.accentColor)
+            Text("Before you unplug the cable, unmount the phone so nothing is cut off mid-copy.")
+                .lineLimit(2)
+            Spacer()
+            Button("Unmount", action: unmount)
+                .glassButton()
+                .help("Safely disconnect the phone (⌘E)")
+            Button(action: close) { Image(systemName: "xmark") }
+                .buttonStyle(.borderless)
+                .help("Hide this until the next time the phone is connected")
         }
         .font(.callout)
         .foregroundStyle(.secondary)
